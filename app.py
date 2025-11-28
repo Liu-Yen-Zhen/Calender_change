@@ -4,6 +4,7 @@ import textwrap
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
+from urllib.request import urlretrieve
 
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -12,99 +13,64 @@ import matplotlib.font_manager as fm
 import streamlit as st
 
 
-# ================= 字型設定 =================
+# ============================================
+# 1. 自動下載中文字型（Source Han Sans TC）
+# ============================================
+
+FONT_URL = (
+    "https://github.com/adobe-fonts/source-han-sans/raw/release/"
+    "OTF/TraditionalChinese/SourceHanSansTC-Regular.otf"
+)
 
 def set_chinese_font():
     """
-    優先使用專案內 fonts/ 資料夾裡的中文字型（跨平台可用）；
-    找不到時，再嘗試 macOS 系統字型 (AppleGothic / STHeiti ...)。
-
-    回傳實際使用的字型 family name（方便除錯）。
+    自動下載「思源黑體（繁體）」，最穩定的中文字型方案。
+    能在本地 + GitHub + Streamlit Cloud 正常運作。
     """
-    app_dir = Path(__file__).resolve().parent
+    cache_dir = Path(".font_cache")
+    cache_dir.mkdir(exist_ok=True)
+    font_path = cache_dir / "SourceHanSansTC-Regular.otf"
 
-    # 1. 專案內自帶字型（建議放開源的 Noto Sans TC / Noto Sans CJK TC）
-    bundled_font_paths = [
-        app_dir / "fonts" / "NotoSansTC-Regular.otf",
-        app_dir / "fonts" / "NotoSansCJKtc-Regular.otf",
-        app_dir / "fonts" / "NotoSansTC-Regular.ttf",
-        app_dir / "fonts" / "NotoSansCJKtc-Regular.ttf",
-    ]
-
-    chosen_name = None
-
-    # 先試試專案內的字型檔
-    for fp in bundled_font_paths:
-        if not fp.exists():
-            continue
+    # 若不存在 → 自動下載
+    if not font_path.exists():
         try:
-            fm.fontManager.addfont(str(fp))
-            prop = fm.FontProperties(fname=str(fp))
-            name = prop.get_name()
-            plt.rcParams["font.sans-serif"] = [name]
-            plt.rcParams["font.family"] = "sans-serif"
-            plt.rcParams["axes.unicode_minus"] = False
-            chosen_name = name
-            print(f"使用專案內字型檔：{fp} → family name = {name}")
-            break
+            st.write("首次使用：正在下載中文字型（Source Han Sans TC），請稍候 2～3 秒…")
+        except:
+            pass
+
+        try:
+            urlretrieve(FONT_URL, font_path)
+            print(f"已下載中文字型：{font_path}")
         except Exception as e:
-            print(f"載入專案內字型失敗：{fp}，錯誤：{e}")
+            print("⚠️ 字型下載失敗，可能會變成豆腐字")
+            print(e)
+            return None
 
-    # 2. 如果沒有專案字型，再試 macOS 系統字型（只在本機 Mac 有用）
-    if chosen_name is None:
-        mac_font_paths = [
-            "/System/Library/Fonts/Supplemental/AppleGothic.ttf",
-            "/System/Library/Fonts/AppleSDGothicNeo.ttc",
-            "/System/Library/Fonts/STHeiti Medium.ttc",
-            "/System/Library/Fonts/STHeiti Light.ttc",
-            "/System/Library/Fonts/Supplemental/NotoSansGothic-Regular.ttf",
-        ]
-        for fp in mac_font_paths:
-            if not os.path.exists(fp):
-                continue
-            try:
-                fm.fontManager.addfont(fp)
-                prop = fm.FontProperties(fname=fp)
-                name = prop.get_name()
-                plt.rcParams["font.sans-serif"] = [name]
-                plt.rcParams["font.family"] = "sans-serif"
-                plt.rcParams["axes.unicode_minus"] = False
-                chosen_name = name
-                print(f"使用 macOS 字型檔：{fp} → family name = {name}")
-                break
-            except Exception as e:
-                print(f"載入 macOS 字型失敗：{fp}，錯誤：{e}")
+    # 載入字型
+    try:
+        fm.fontManager.addfont(str(font_path))
+        prop = fm.FontProperties(fname=str(font_path))
+        font_name = prop.get_name()
 
-    # 3. 名稱 fallback（極端情況用，通常用不到）
-    if chosen_name is None:
-        available = set(f.name for f in fm.fontManager.ttflist)
-        fallback_names = [
-            "Noto Sans TC",
-            "Noto Sans CJK TC",
-            "Heiti TC",
-            "AppleGothic",
-            "Apple SD Gothic Neo",
-            "STHeiti",
-        ]
-        for name in fallback_names:
-            if name in available:
-                plt.rcParams["font.sans-serif"] = [name]
-                plt.rcParams["font.family"] = "sans-serif"
-                plt.rcParams["axes.unicode_minus"] = False
-                chosen_name = name
-                print(f"使用 fallback 字型名稱：{name}")
-                break
+        plt.rcParams["font.sans-serif"] = [font_name]
+        plt.rcParams["font.family"] = "sans-serif"
+        plt.rcParams["axes.unicode_minus"] = False
 
-    if chosen_name is None:
-        print("⚠ 找不到可用中文字型，中文可能會變成豆腐字")
+        print(f"目前中文使用字型：{font_name}")
+        return font_name
 
-    return chosen_name
+    except Exception as e:
+        print("⚠️ 字型載入失敗")
+        print(e)
+        return None
 
 
-# ================= 資料處理與畫圖 =================
+# ============================================
+# 2. 你的行事曆資料處理函式
+# ============================================
 
 def format_time_range(raw):
-    """把 0900-1200 轉成 09:00-12:00，比較好讀。"""
+    """把 0900-1200 轉成 09:00-12:00"""
     if not isinstance(raw, str):
         return ""
     if "-" not in raw:
@@ -116,12 +82,10 @@ def format_time_range(raw):
 
 
 def build_events_dict(df: pd.DataFrame):
-    """整理每一天的事件清單，回傳 {day: [事件文字, ...]}。"""
+    """整理每一天的事件清單"""
     df[["日期", "星期", "地點"]] = df[["日期", "星期", "地點"]].ffill()
-
     df = df[df["時間"].notna()]
     df = df[df["日期"].notna()]
-
     df["日期"] = pd.to_datetime(df["日期"])
 
     events_by_day = {}
@@ -132,15 +96,12 @@ def build_events_dict(df: pd.DataFrame):
 
         # 標籤
         tags = []
-        if str(row.get("上課")) == "V":
-            tags.append("上課")
-        if str(row.get("借用")) == "V":
-            tags.append("借用")
-        if str(row.get("參訪")) == "V":
-            tags.append("參訪")
+        if str(row.get("上課")) == "V": tags.append("上課")
+        if str(row.get("借用")) == "V": tags.append("借用")
+        if str(row.get("參訪")) == "V": tags.append("參訪")
         tag_text = f"({ '、'.join(tags) })" if tags else ""
 
-        # 活動名稱：申請事由 > 申請單位
+        # 活動名稱
         raw_title = row.get("申請事由") or row.get("申請單位")
         if pd.isna(raw_title) or str(raw_title).strip() == "":
             continue
@@ -155,11 +116,15 @@ def build_events_dict(df: pd.DataFrame):
     return events_by_day
 
 
-def draw_month_calendar(year, month, events_by_day, title_text):
-    """畫出月曆並回傳 PNG BytesIO。"""
 
-    used_font = set_chinese_font()
-    print(f"目前使用字型：{used_font}")
+# ============================================
+# 3. 生成月曆圖片
+# ============================================
+
+def draw_month_calendar(year, month, events_by_day, title_text):
+    """畫出月曆並回傳 PNG BytesIO"""
+
+    set_chinese_font()  # 重要：確保 matplot 使用中文字型
 
     calendar.setfirstweekday(calendar.SUNDAY)
     month_matrix = calendar.monthcalendar(year, month)
@@ -171,31 +136,16 @@ def draw_month_calendar(year, month, events_by_day, title_text):
     ax.axis("off")
 
     # 標題
-    ax.text(
-        0.5,
-        weeks + 0.3,
-        title_text,
-        ha="center",
-        va="bottom",
-        fontsize=24,
-        fontweight="bold",
-        transform=ax.transData,
-    )
+    ax.text(0.5, weeks + 0.3, title_text, ha="center",
+            fontsize=24, fontweight="bold", transform=ax.transData)
 
-    # 星期標頭
+    # 星期
     weekdays = ["週日", "週一", "週二", "週三", "週四", "週五", "週六"]
     for i, wd in enumerate(weekdays):
-        ax.text(
-            i + 0.5,
-            weeks - 0.1,
-            wd,
-            ha="center",
-            va="top",
-            fontsize=16,
-            fontweight="bold",
-        )
+        ax.text(i + 0.5, weeks - 0.1, wd, ha="center",
+                fontsize=16, fontweight="bold")
 
-    # 每格內容
+    # 月曆格線
     for week_idx, week in enumerate(month_matrix):
         for day_idx, day in enumerate(week):
             x = day_idx
@@ -207,16 +157,10 @@ def draw_month_calendar(year, month, events_by_day, title_text):
                 continue
 
             # 日期
-            ax.text(
-                x + 0.05,
-                y + 0.85,
-                str(day),
-                ha="left",
-                va="top",
-                fontsize=14,
-                fontweight="bold",
-            )
+            ax.text(x + 0.05, y + 0.85, str(day),
+                    ha="left", va="top", fontsize=14, fontweight="bold")
 
+            # 活動內容
             events = events_by_day.get(day, [])
             if not events:
                 continue
@@ -226,14 +170,8 @@ def draw_month_calendar(year, month, events_by_day, title_text):
                 wrapped = textwrap.fill(event, width=14)
                 wrapped_lines.append("• " + wrapped)
 
-            ax.text(
-                x + 0.05,
-                y + 0.75,
-                "\n".join(wrapped_lines),
-                ha="left",
-                va="top",
-                fontsize=12,
-            )
+            ax.text(x + 0.05, y + 0.75, "\n".join(wrapped_lines),
+                    ha="left", va="top", fontsize=12)
 
     fig.tight_layout()
 
@@ -244,10 +182,13 @@ def draw_month_calendar(year, month, events_by_day, title_text):
     return buf
 
 
-# ================= Streamlit 介面 =================
+
+# ============================================
+# 4. Streamlit UI
+# ============================================
 
 st.set_page_config(page_title="教室月曆產生器", layout="wide")
-st.title("信義多功能教室行事曆產生器")
+st.title("多功能教室行事曆產生器")
 
 uploaded_file = st.file_uploader("請上傳 Excel 檔 (.xlsx)", type=["xlsx"])
 
@@ -258,35 +199,33 @@ if uploaded_file is not None:
 
         st.success(f"成功讀取，共有 {len(sheet_names)} 個月份表。")
 
-        target_sheet = st.selectbox(
-            "請選擇要產生日曆的月份工作表",
-            sheet_names,
-        )
+        target_sheet = st.selectbox("請選擇要產生日曆的月份工作表", sheet_names)
 
-        generate_btn = st.button("產生行事曆")
-
-        if generate_btn:
+        if st.button("產生行事曆"):
             df = pd.read_excel(uploaded_file, sheet_name=target_sheet, header=1)
 
             tmp = df[df["日期"].notna()].copy()
             first_date = pd.to_datetime(tmp["日期"].iloc[0])
+
             year = first_date.year
             month = first_date.month
 
             events = build_events_dict(df)
             title = f"{year}年{month:02d}月 多功能教室使用情形"
+
             png_buf = draw_month_calendar(year, month, events, title)
 
-            st.image(png_buf, use_column_width=True)
+            st.image(png_buf, use_container_width=True)
 
             st.download_button(
                 label="下載 PNG",
                 data=png_buf,
                 file_name=f"calendar_{target_sheet}.png",
-                mime="image/png",
+                mime="image/png"
             )
 
     except Exception as e:
         st.error(f"讀取 Excel 時發生錯誤：{e}")
+
 else:
     st.info("請先上傳 Excel 檔以開始。")
