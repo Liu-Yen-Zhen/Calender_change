@@ -40,7 +40,6 @@ def set_chinese_font():
     強制指定 macOS 內建可用的中文/韓文字型，避免 Streamlit + matplotlib 出現豆腐字。
     """
     font_paths = [
-        "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/de97612eef4e3cf8ee8e5c0ebd6fd879bbecd23a.asset/AssetData/AppleLiGothic-Medium.ttf"
         "/System/Library/Fonts/Supplemental/AppleGothic.ttf",
         "/System/Library/Fonts/AppleSDGothicNeo.ttc",
         "/System/Library/Fonts/STHeiti Medium.ttc",
