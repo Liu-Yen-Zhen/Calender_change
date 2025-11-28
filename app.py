@@ -250,7 +250,7 @@ def draw_month_calendar(year, month, events_by_day, title_text):
                 str(day),
                 ha="left",
                 va="top",
-                fontsize=14,
+                fontsize=16,
                 fontweight="bold",
                 color="#333333",
             )
