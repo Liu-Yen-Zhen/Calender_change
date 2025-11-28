@@ -3,6 +3,7 @@ import calendar
 import textwrap
 from datetime import datetime
 from io import BytesIO
+from pathlib import Path
 
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -15,48 +16,75 @@ import streamlit as st
 
 def set_chinese_font():
     """
-    強制指定 macOS 內建可用的中文字型，避免 Streamlit + matplotlib 出現豆腐字。
-    會依序嘗試：AppleGothic → AppleSDGothicNeo → STHeiti → NotoSansGothic
-    回傳實際使用的字型 family name（除錯用）。
+    優先使用專案內 fonts/ 資料夾裡的中文字型（跨平台可用）；
+    找不到時，再嘗試 macOS 系統字型 (AppleGothic / STHeiti ...)。
+
+    回傳實際使用的字型 family name（方便除錯）。
     """
-    font_paths = [
-        "/System/Library/Fonts/Supplemental/AppleGothic.ttf",
-        "/System/Library/Fonts/AppleSDGothicNeo.ttc",
-        "/System/Library/Fonts/STHeiti Medium.ttc",
-        "/System/Library/Fonts/STHeiti Light.ttc",
-        "/System/Library/Fonts/Supplemental/NotoSansGothic-Regular.ttf",
+    app_dir = Path(__file__).resolve().parent
+
+    # 1. 專案內自帶字型（建議放開源的 Noto Sans TC / Noto Sans CJK TC）
+    bundled_font_paths = [
+        app_dir / "fonts" / "NotoSansTC-Regular.otf",
+        app_dir / "fonts" / "NotoSansCJKtc-Regular.otf",
+        app_dir / "fonts" / "NotoSansTC-Regular.ttf",
+        app_dir / "fonts" / "NotoSansCJKtc-Regular.ttf",
     ]
 
     chosen_name = None
 
-    for fp in font_paths:
-        if not os.path.exists(fp):
+    # 先試試專案內的字型檔
+    for fp in bundled_font_paths:
+        if not fp.exists():
             continue
         try:
-            # 把字型檔加入 fontManager
-            fm.fontManager.addfont(fp)
-            # 從檔案讀出真正的 family name
-            prop = fm.FontProperties(fname=fp)
+            fm.fontManager.addfont(str(fp))
+            prop = fm.FontProperties(fname=str(fp))
             name = prop.get_name()
-            # 設定成預設字型
             plt.rcParams["font.sans-serif"] = [name]
             plt.rcParams["font.family"] = "sans-serif"
             plt.rcParams["axes.unicode_minus"] = False
             chosen_name = name
-            print(f"使用字型檔：{fp} → family name = {name}")
+            print(f"使用專案內字型檔：{fp} → family name = {name}")
             break
         except Exception as e:
-            print(f"載入字型失敗：{fp}，錯誤：{e}")
+            print(f"載入專案內字型失敗：{fp}，錯誤：{e}")
 
-    # 如果上面全部失敗，再用名稱 fallback
+    # 2. 如果沒有專案字型，再試 macOS 系統字型（只在本機 Mac 有用）
+    if chosen_name is None:
+        mac_font_paths = [
+            "/System/Library/Fonts/Supplemental/AppleGothic.ttf",
+            "/System/Library/Fonts/AppleSDGothicNeo.ttc",
+            "/System/Library/Fonts/STHeiti Medium.ttc",
+            "/System/Library/Fonts/STHeiti Light.ttc",
+            "/System/Library/Fonts/Supplemental/NotoSansGothic-Regular.ttf",
+        ]
+        for fp in mac_font_paths:
+            if not os.path.exists(fp):
+                continue
+            try:
+                fm.fontManager.addfont(fp)
+                prop = fm.FontProperties(fname=fp)
+                name = prop.get_name()
+                plt.rcParams["font.sans-serif"] = [name]
+                plt.rcParams["font.family"] = "sans-serif"
+                plt.rcParams["axes.unicode_minus"] = False
+                chosen_name = name
+                print(f"使用 macOS 字型檔：{fp} → family name = {name}")
+                break
+            except Exception as e:
+                print(f"載入 macOS 字型失敗：{fp}，錯誤：{e}")
+
+    # 3. 名稱 fallback（極端情況用，通常用不到）
     if chosen_name is None:
         available = set(f.name for f in fm.fontManager.ttflist)
         fallback_names = [
+            "Noto Sans TC",
+            "Noto Sans CJK TC",
             "Heiti TC",
             "AppleGothic",
             "Apple SD Gothic Neo",
             "STHeiti",
-            "Noto Sans CJK TC",
         ]
         for name in fallback_names:
             if name in available:
@@ -88,15 +116,12 @@ def format_time_range(raw):
 
 
 def build_events_dict(df: pd.DataFrame):
-    """整理每一天的事件清單，回傳 {day: [事件文字, ...]}"""
-    # 往下填滿日期/星期/地點，讓同一天多筆時段共用
+    """整理每一天的事件清單，回傳 {day: [事件文字, ...]}。"""
     df[["日期", "星期", "地點"]] = df[["日期", "星期", "地點"]].ffill()
 
-    # 只保留有時間、日期的列
     df = df[df["時間"].notna()]
     df = df[df["日期"].notna()]
 
-    # 日期轉 datetime
     df["日期"] = pd.to_datetime(df["日期"])
 
     events_by_day = {}
@@ -105,7 +130,7 @@ def build_events_dict(df: pd.DataFrame):
         day = int(row["日期"].day)
         time_str = format_time_range(str(row["時間"]))
 
-        # 標籤：上課 / 借用 / 參訪
+        # 標籤
         tags = []
         if str(row.get("上課")) == "V":
             tags.append("上課")
@@ -131,7 +156,7 @@ def build_events_dict(df: pd.DataFrame):
 
 
 def draw_month_calendar(year, month, events_by_day, title_text):
-    """畫出月曆並回傳 PNG 的 BytesIO 物件。"""
+    """畫出月曆並回傳 PNG BytesIO。"""
 
     used_font = set_chinese_font()
     print(f"目前使用字型：{used_font}")
@@ -170,16 +195,13 @@ def draw_month_calendar(year, month, events_by_day, title_text):
             fontweight="bold",
         )
 
-    # 每一格畫框 + 填內容
+    # 每格內容
     for week_idx, week in enumerate(month_matrix):
         for day_idx, day in enumerate(week):
             x = day_idx
             y = weeks - (week_idx + 1)
 
-            # 方框
-            ax.add_patch(
-                patches.Rectangle((x, y), 1, 1, fill=False, linewidth=1)
-            )
+            ax.add_patch(patches.Rectangle((x, y), 1, 1, fill=False, linewidth=1))
 
             if day == 0:
                 continue
@@ -195,7 +217,6 @@ def draw_month_calendar(year, month, events_by_day, title_text):
                 fontweight="bold",
             )
 
-            # 當天活動
             events = events_by_day.get(day, [])
             if not events:
                 continue
@@ -247,7 +268,6 @@ if uploaded_file is not None:
         if generate_btn:
             df = pd.read_excel(uploaded_file, sheet_name=target_sheet, header=1)
 
-            # 從資料裡推算年月
             tmp = df[df["日期"].notna()].copy()
             first_date = pd.to_datetime(tmp["日期"].iloc[0])
             year = first_date.year
