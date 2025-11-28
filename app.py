@@ -10,27 +10,72 @@ import matplotlib.patches as patches
 import matplotlib.font_manager as fm
 import streamlit as st
 
+
 # ========= 字型設定 =========
+# 這裡是「名稱 fallback」，主要用在找不到實際字型檔時的退路
 CHINESE_FONT_CANDIDATES = [
     "Heiti TC",
-    "AppleGothic",
-    "Apple SD Gothic Neo",
-    "Noto Sans Gothic",
-    "Microsoft JhengHei",
-    "Noto Sans CJK TC",
     "STHeiti",
+    "AppleGothic",
 ]
 # ===========================
 
 
+def find_font_path(preferred_keywords):
+    """
+    在系統字型裡找檔名包含指定關鍵字的字型檔，回傳第一個找到的路徑。
+    preferred_keywords: 例如 ["Heiti", "STHeiti"] 或 ["AppleGothic"]
+    """
+    for fpath in fm.findSystemFonts(fontpaths=None):
+        fname = os.path.basename(fpath)
+        lower = fname.lower()
+        for kw in preferred_keywords:
+            if kw.lower() in lower:
+                return fpath
+    return None
+
+
 def set_chinese_font():
-    """設定 matplotlib 的中文字型，避免變成豆腐字。"""
+    """
+    強制指定中文字型，優先 Heiti TC，再來 AppleGothic。
+    先從實際字型檔路徑找，最後才用名稱 fallback。
+    """
+    # 1. 先試著從檔案路徑載入 Heiti 系列
+    heiti_path = find_font_path(["Heiti", "STHeiti"])
+    if heiti_path and os.path.exists(heiti_path):
+        try:
+            fm.fontManager.addfont(heiti_path)
+            font_name = fm.FontProperties(fname=heiti_path).get_name()
+            plt.rcParams["font.sans-serif"] = [font_name]
+            plt.rcParams["axes.unicode_minus"] = False
+            print(f"使用字型檔 (Heiti)：{heiti_path} -> {font_name}")
+            return font_name
+        except Exception as e:
+            print(f"載入 Heiti 字型檔失敗：{heiti_path}，錯誤：{e}")
+
+    # 2. 找 AppleGothic 檔案
+    ag_path = find_font_path(["AppleGothic"])
+    if ag_path and os.path.exists(ag_path):
+        try:
+            fm.fontManager.addfont(ag_path)
+            font_name = fm.FontProperties(fname=ag_path).get_name()
+            plt.rcParams["font.sans-serif"] = [font_name]
+            plt.rcParams["axes.unicode_minus"] = False
+            print(f"使用字型檔 (AppleGothic)：{ag_path} -> {font_name}")
+            return font_name
+        except Exception as e:
+            print(f"載入 AppleGothic 字型檔失敗：{ag_path}，錯誤：{e}")
+
+    # 3. 如果以上都 fail，再用名稱 fallback
     available = set(f.name for f in fm.fontManager.ttflist)
     for name in CHINESE_FONT_CANDIDATES:
         if name in available:
             plt.rcParams["font.sans-serif"] = [name]
             plt.rcParams["axes.unicode_minus"] = False
+            print(f"使用字型名稱 fallback：{name}")
             return name
+
+    print("⚠ 找不到可用中文字型，中文可能會變成豆腐字")
     return None
 
 
@@ -61,9 +106,12 @@ def build_events_dict(df: pd.DataFrame):
 
         # 標籤
         tags = []
-        if str(row.get("上課")) == "V": tags.append("上課")
-        if str(row.get("借用")) == "V": tags.append("借用")
-        if str(row.get("參訪")) == "V": tags.append("參訪")
+        if str(row.get("上課")) == "V":
+            tags.append("上課")
+        if str(row.get("借用")) == "V":
+            tags.append("借用")
+        if str(row.get("參訪")) == "V":
+            tags.append("參訪")
         tag_text = f"({ '、'.join(tags) })" if tags else ""
 
         # 活動名稱
@@ -85,6 +133,7 @@ def draw_month_calendar(year, month, events_by_day, title_text):
     """畫出月曆並回傳 PNG BytesIO"""
 
     set_chinese_font()
+
     calendar.setfirstweekday(calendar.SUNDAY)
     month_matrix = calendar.monthcalendar(year, month)
     weeks = len(month_matrix)
@@ -95,26 +144,50 @@ def draw_month_calendar(year, month, events_by_day, title_text):
     ax.axis("off")
 
     # 標題
-    ax.text(0.5, weeks + 0.3, title_text, ha="center",
-            fontsize=24, fontweight="bold", transform=ax.transData)
+    ax.text(
+        0.5,
+        weeks + 0.3,
+        title_text,
+        ha="center",
+        va="bottom",
+        fontsize=24,
+        fontweight="bold",
+        transform=ax.transData,
+    )
 
     weekdays = ["週日", "週一", "週二", "週三", "週四", "週五", "週六"]
     for i, wd in enumerate(weekdays):
-        ax.text(i + 0.5, weeks - 0.1, wd, ha="center",
-                fontsize=16, fontweight="bold")
+        ax.text(
+            i + 0.5,
+            weeks - 0.1,
+            wd,
+            ha="center",
+            va="top",
+            fontsize=16,
+            fontweight="bold",
+        )
 
     for week_idx, week in enumerate(month_matrix):
         for day_idx, day in enumerate(week):
             x = day_idx
             y = weeks - (week_idx + 1)
 
-            ax.add_patch(patches.Rectangle((x, y), 1, 1, fill=False, linewidth=1))
+            ax.add_patch(
+                patches.Rectangle((x, y), 1, 1, fill=False, linewidth=1)
+            )
 
             if day == 0:
                 continue
 
-            ax.text(x + 0.05, y + 0.85, str(day),
-                    ha="left", va="top", fontsize=14, fontweight="bold")
+            ax.text(
+                x + 0.05,
+                y + 0.85,
+                str(day),
+                ha="left",
+                va="top",
+                fontsize=14,
+                fontweight="bold",
+            )
 
             events = events_by_day.get(day, [])
             if not events:
@@ -125,8 +198,14 @@ def draw_month_calendar(year, month, events_by_day, title_text):
                 wrapped = textwrap.fill(event, width=14)
                 wrapped_lines.append("• " + wrapped)
 
-            ax.text(x + 0.05, y + 0.75, "\n".join(wrapped_lines),
-                    ha="left", va="top", fontsize=12)
+            ax.text(
+                x + 0.05,
+                y + 0.75,
+                "\n".join(wrapped_lines),
+                ha="left",
+                va="top",
+                fontsize=12,
+            )
 
     fig.tight_layout()
 
@@ -174,7 +253,7 @@ if uploaded_file is not None:
                 label="下載 PNG",
                 data=png_buf,
                 file_name=f"calendar_{target_sheet}.png",
-                mime="image/png"
+                mime="image/png",
             )
 
     except Exception as e:
