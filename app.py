@@ -250,7 +250,7 @@ def draw_month_calendar(year, month, events_by_day, title_text):
                 str(day),
                 ha="left",
                 va="top",
-                fontsize=13,
+                fontsize=14,
                 fontweight="bold",
                 color="#333333",
             )
@@ -274,7 +274,7 @@ def draw_month_calendar(year, month, events_by_day, title_text):
                 cell_text,
                 ha="left",
                 va="top",
-                fontsize=10.5,
+                fontsize=14,
                 color="#333333",
             )
 
@@ -291,7 +291,7 @@ def draw_month_calendar(year, month, events_by_day, title_text):
 # 4. Streamlit UI：側邊欄 + 主畫面
 # ============================================
 
-st.set_page_config(page_title="信義多功能教室行事曆產生器", layout="wide")
+st.set_page_config(page_title="多功能教室行事曆產生器", layout="wide")
 
 # 簡單一點的 CSS，讓標題看起來舒服一點
 st.markdown(
